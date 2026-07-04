@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.9
+// @version      0.3.0
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -34,7 +34,11 @@
     timer: null,
     idleRounds: 0,
     lastHeight: 0,
+    apiRunning: false,
     apiAddedCount: 0,
+    apiPageCount: 0,
+    apiNextUrl: "",
+    apiLastError: "",
     lastApiAt: "",
     items: loadItems(),
     settings: {
@@ -368,6 +372,7 @@
   }
 
   function ingestActivityApiResponse(json, sourceUrl) {
+    captureActivityApiPaging(json);
     const items = extractApiItems(json, sourceUrl);
     if (items.length === 0) return;
 
@@ -377,6 +382,16 @@
       state.lastApiAt = formatLocalDateTime(new Date());
       updatePanel();
     }
+  }
+
+  function captureActivityApiPaging(json) {
+    const next = nextActivityApiUrl(json);
+    if (next) state.apiNextUrl = next;
+  }
+
+  function nextActivityApiUrl(json) {
+    const next = json?.paging?.next;
+    return typeof next === "string" && next ? absoluteUrl(next) : "";
   }
 
   function extractApiItems(json, sourceUrl) {
@@ -530,12 +545,114 @@
 
   function stop() {
     state.running = false;
+    state.apiRunning = false;
     if (state.timer) {
       window.clearTimeout(state.timer);
       state.timer = null;
     }
     collectVisibleItems();
     updatePanel();
+  }
+
+  async function startApiCollect() {
+    if (state.apiRunning) return;
+
+    const token = currentProfileToken();
+    if (!token) {
+      updatePanel("未识别用户 token");
+      return;
+    }
+
+    state.apiRunning = true;
+    state.apiLastError = "";
+    state.apiPageCount = 0;
+    updatePanel("API直采中");
+
+    let nextUrl = state.apiNextUrl || buildInitialActivityApiUrl(token);
+
+    try {
+      while (state.apiRunning && nextUrl) {
+        const json = await fetchActivityApiPage(nextUrl);
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        ingestActivityApiResponse(json, nextUrl);
+
+        state.apiPageCount += 1;
+        const followingUrl = nextActivityApiUrl(json);
+        const isEnd = Boolean(json?.paging?.is_end || json?.paging?.isEnd) || rows.length === 0 || !followingUrl;
+
+        updatePanel(`API页 ${state.apiPageCount}`);
+        if (isEnd) break;
+
+        nextUrl = followingUrl;
+        state.apiNextUrl = followingUrl;
+        await sleep(state.settings.intervalMs);
+      }
+    } catch (error) {
+      state.apiLastError = error instanceof Error ? error.message : String(error);
+      updatePanel(`API失败 ${state.apiLastError.slice(0, 40)}`);
+    } finally {
+      state.apiRunning = false;
+      updatePanel(state.apiLastError ? `API失败 ${state.apiLastError.slice(0, 40)}` : "API直采结束");
+    }
+  }
+
+  function buildInitialActivityApiUrl(token) {
+    const url = new URL(`/api/v3/moments/${encodeURIComponent(token)}/activities`, location.origin);
+    url.searchParams.set("offset", String(Date.now()));
+    url.searchParams.set("page_num", "1");
+    return url.href;
+  }
+
+  async function fetchActivityApiPage(url) {
+    if (typeof window.fetch !== "function") return xhrActivityApiPage(url);
+
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        accept: "application/json, text/plain, */*",
+      },
+    });
+
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const errorJson = await response.clone().json();
+        const serverMessage = errorJson?.error?.message || errorJson?.message;
+        if (serverMessage) message = `${message}: ${serverMessage}`;
+      } catch {}
+      throw new Error(message);
+    }
+
+    return response.json();
+  }
+
+  function xhrActivityApiPage(url) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", url, true);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("accept", "application/json, text/plain, */*");
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(`${xhr.status} ${xhr.statusText}: ${xhr.responseText.slice(0, 80)}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(xhr.responseText || "{}"));
+        } catch {
+          reject(new Error("API 返回不是 JSON"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("API 请求失败"));
+      xhr.ontimeout = () => reject(new Error("API 请求超时"));
+      xhr.timeout = 30000;
+      xhr.send();
+    });
+  }
+
+  function sleep(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, milliseconds)));
   }
 
   function clearItems() {
@@ -939,6 +1056,10 @@
         <button data-action="stop">暂停</button>
       </div>
       <div class="zaw-row">
+        <button data-action="api-collect">API直采</button>
+        <button data-action="trim-page">清理页面</button>
+      </div>
+      <div class="zaw-row">
         <button data-action="json">JSON</button>
         <button data-action="csv">CSV</button>
       </div>
@@ -949,9 +1070,6 @@
       <div class="zaw-row">
         <button data-action="clear">清空</button>
         <button data-action="activity-page">动态页</button>
-      </div>
-      <div class="zaw-row">
-        <button data-action="trim-page">清理页面</button>
       </div>
       <div class="zaw-row">
         <label>间隔 <input type="number" min="100" step="100" data-field="intervalMs"></label>
@@ -1070,6 +1188,7 @@
       const action = target.dataset.action;
       if (action === "start") start();
       if (action === "stop") stop();
+      if (action === "api-collect") startApiCollect();
       if (action === "json") exportJson();
       if (action === "csv") exportCsv();
       if (action === "prompt-summary") exportPromptMarkdown(true);
@@ -1125,7 +1244,7 @@
       const parts = [
         state.running ? "运行中" : "已暂停",
         `${state.items.length} 条`,
-        `API ${state.apiAddedCount}`,
+        state.apiRunning ? `API直采 ${state.apiPageCount}页` : `API ${state.apiAddedCount}`,
         `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
       ];
       if (message) parts.push(message);
