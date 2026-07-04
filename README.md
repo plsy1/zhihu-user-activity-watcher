@@ -1,69 +1,87 @@
 # Zhihu User Activity Watcher
 
-Tampermonkey userscript for exporting a visible activity timeline from a Zhihu user's profile activity page.
+一个用于采集知乎用户动态时间线，并导出给 AI 分析用户画像、兴趣和行为习惯的 Tampermonkey 脚本。
 
-## Install
+## 安装
 
-[![Install userscript](https://img.shields.io/badge/Install-userscript-2ea44f?style=for-the-badge)](https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js)
+[![安装 userscript](https://img.shields.io/badge/安装-userscript-2ea44f?style=for-the-badge)](https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js)
 
-Install Tampermonkey first, then click the button above. Tampermonkey should open the userscript installation screen automatically.
+先安装 Tampermonkey，然后点击上面的安装按钮。正常情况下，Tampermonkey 会自动打开脚本安装页面。
 
-The script includes `@updateURL` and `@downloadURL`, so future updates pushed to the `main` branch can be picked up by Tampermonkey's normal update check.
+脚本已经配置 `@updateURL` 和 `@downloadURL`。后续只要仓库 `main` 分支里的脚本版本号更新，Tampermonkey 就可以通过正常更新检查获取新版。
 
-## Use
+## 使用
 
-1. Install Tampermonkey in your browser.
-2. Click the install button above.
-3. Visit a Zhihu profile, for example `https://www.zhihu.com/people/<token>/activities`.
-4. Use the floating panel:
-   - `动态页`: jump from the profile page to the activity page.
-   - `开始`: slowly scroll and collect rendered activity items.
-   - `暂停`: stop scrolling.
-   - `JSON`: export structured timeline data plus the analysis prompt.
-   - `CSV`: export timeline rows for spreadsheets.
-   - `AI+摘要`: export a Markdown file that contains the analysis prompt, compact timeline, and visible card summaries. It also opens an in-page preview for copying.
-   - `AI精简`: export a Markdown file that contains the analysis prompt and compact timeline without summaries.
-   - `清空`: clear records stored in browser localStorage.
+1. 在浏览器里安装 Tampermonkey。
+2. 点击上方安装按钮安装脚本。
+3. 打开知乎用户主页，例如 `https://www.zhihu.com/people/<token>/activities`。
+4. 使用页面右下角的浮动面板：
+   - `动态页`：从用户主页跳转到动态页。
+   - `开始`：慢速下滑并采集当前账号可见的动态。
+   - `暂停`：停止下滑。
+   - `JSON`：导出完整结构化数据。
+   - `CSV`：导出适合表格查看的数据。
+   - `AI+摘要`：导出 Markdown，包含 AI 分析 prompt、精简 timeline 和每条动态摘要。
+   - `AI精简`：导出 Markdown，包含 AI 分析 prompt 和精简 timeline，不含摘要，更省 token。
+   - `清空`：清空当前浏览器本地保存的采集结果。
 
-## Exported fields
+## 数据字段
 
-Each captured item is normalized into a timeline row:
+每条动态会被整理成一条 timeline 记录：
 
-- `actionType` / `actionLabel`: activity type, such as voteup, follow, answer, collect, or article.
-- `targetType`: inferred target type, such as answer, question, article, person, column, or collection.
-- `targetTitle`: visible title or text from the activity card.
-- `targetUrl`: Zhihu URL for the activity target when visible.
-- `timeText`: original time text shown by Zhihu.
-- `timeIso`: best-effort parsed timestamp. It is left empty when parsing is uncertain.
-- `summary`: compact text from the visible card.
+- `actionType` / `actionLabel`：动作类型，例如点赞/赞同、关注、回答、收藏、文章等。
+- `targetType`：目标类型，例如回答、问题、文章、用户、专栏、收藏夹等。
+- `targetTitle`：动态目标标题或可见文本。
+- `targetUrl`：动态目标链接。
+- `timeText`：知乎页面显示的原始时间文本。
+- `timeIso`：尽力解析得到的结构化时间；解析不确定时可能为空。
+- `summary`：动态卡片里的可见摘要文本。
 
-## AI workflow
+## AI 导出
 
-Use the `AI+摘要` or `AI精简` button when you want to paste the export into a large language model. The Markdown file includes a prompt asking the model to:
+当你想把结果交给大模型分析时，使用 `AI+摘要` 或 `AI精简`。
 
-- Build a cautious public-activity user profile.
-- Analyze interests, hobbies, preferred topics, and repeated content patterns.
-- Summarize behavior habits, such as liking, following, answering, or collecting.
-- Identify active dates, active hour ranges, and unusually dense activity windows.
-- Infer possible non-sensitive background categories, such as broad professional, learning, or interest areas, with confidence levels and evidence.
-- Separate facts, weak signals, and unsupported conclusions.
-- Avoid real identity discovery, contact lookup, precise location inference, or sensitive personal inferences.
+AI Markdown 会包含：
 
-The AI Markdown omits links and raw JSON to reduce token usage. Use `AI精简` for large timelines, and `AI+摘要` when the model needs more content context. Use JSON/CSV exports when you need full `targetUrl` values or structured fields.
+- 分析任务 prompt。
+- 元数据，例如用户 token、导出时间、动态条数、时间范围。
+- 按时间排列的 timeline。
+- 可选摘要：`AI+摘要` 包含摘要，`AI精简` 不包含摘要。
 
-AI Markdown uses Zhihu's original visible time text in the timeline and includes an overall time range in metadata. JSON/CSV exports still keep the parsed `timeIso` field for structured processing.
+AI prompt 会要求模型分析：
 
-## Approach
+- 用户整体画像。
+- 兴趣偏好和高频主题。
+- 内容偏好。
+- 点赞、关注、回答、收藏等行为特征。
+- 活跃日期、活跃小时段和集中活跃窗口。
+- 可能的职业、学习方向、技术/专业背景。
+- 用户标签。
+- 明确事实、合理推测、弱信号和无法判断内容。
 
-The script does not bypass login checks, CAPTCHA, rate limits, or access controls. It reads activity cards already rendered in the browser DOM and scrolls at a conservative interval.
+AI Markdown 会省略链接和原始 JSON，以减少 token。需要完整 `targetUrl` 或结构化字段时，请使用 JSON/CSV 导出。
 
-This is usually more maintainable and less likely to trigger anti-abuse systems than high-frequency backend requests, but it has tradeoffs:
+## 采集方式
 
-- It only captures content the current account can see.
-- It depends on Zhihu's frontend DOM structure.
-- It may miss items if the page changes, lazy-loads slowly, or hides content behind interaction.
-- It is not suitable for large-scale crawling.
+脚本不会绕过登录、验证码、风控、权限或访问控制。它只读取当前浏览器里已经渲染出来、当前账号可见的知乎动态卡片，并按设定间隔下滑页面。
 
-## Notes
+这种方式通常比高频请求后端接口更温和，也更容易维护，但有一些限制：
 
-Use this for personal archival or monitoring of publicly accessible activity only. Respect Zhihu's terms, robots/rate-limit expectations, and user privacy.
+- 只能采集当前账号能看到的内容。
+- 依赖知乎前端 DOM 结构，知乎改版后可能需要调整选择器。
+- 如果页面懒加载很慢，滚动太快可能漏掉部分内容。
+- 不适合大规模爬取。
+
+## 本地保存
+
+采集结果会保存在当前浏览器的 `localStorage` 中：
+
+```text
+zhihu-activity-watcher.items
+```
+
+刷新页面后数据仍会保留。再次采集时，脚本会根据动作类型、链接和时间去重，避免重复累计。点击 `清空` 会删除这些本地数据。
+
+## 注意事项
+
+请仅用于个人归档、公开信息整理或合规研究。使用时应尊重知乎服务条款、访问频率限制和用户隐私。
