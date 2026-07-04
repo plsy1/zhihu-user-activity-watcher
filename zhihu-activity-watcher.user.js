@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.3.0
+// @version      0.3.1
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -42,6 +42,7 @@
     lastApiAt: "",
     items: loadItems(),
     settings: {
+      collectionMode: "api",
       intervalMs: 2800,
       maxIdleRounds: 8,
       ...loadJson(SETTINGS_KEY, {}),
@@ -535,6 +536,15 @@
   }
 
   function start() {
+    if (isCollecting()) return;
+    if (currentCollectionMode() === "api") {
+      startApiCollect();
+      return;
+    }
+    startDomCollect();
+  }
+
+  function startDomCollect() {
     if (state.running) return;
     state.running = true;
     state.idleRounds = 0;
@@ -551,6 +561,24 @@
       state.timer = null;
     }
     collectVisibleItems();
+    updatePanel();
+  }
+
+  function isCollecting() {
+    return state.running || state.apiRunning;
+  }
+
+  function currentCollectionMode() {
+    return state.settings.collectionMode === "dom" ? "dom" : "api";
+  }
+
+  function setCollectionMode(mode) {
+    if (isCollecting()) {
+      updatePanel("请先暂停再切换模式");
+      return;
+    }
+    state.settings.collectionMode = mode === "dom" ? "dom" : "api";
+    saveJson(SETTINGS_KEY, state.settings);
     updatePanel();
   }
 
@@ -1056,8 +1084,8 @@
         <button data-action="stop">暂停</button>
       </div>
       <div class="zaw-row">
-        <button data-action="api-collect">API直采</button>
-        <button data-action="trim-page">清理页面</button>
+        <button data-mode="api">API直采</button>
+        <button data-mode="dom">DOM滚动</button>
       </div>
       <div class="zaw-row">
         <button data-action="json">JSON</button>
@@ -1070,6 +1098,9 @@
       <div class="zaw-row">
         <button data-action="clear">清空</button>
         <button data-action="activity-page">动态页</button>
+      </div>
+      <div class="zaw-row">
+        <button data-action="trim-page">清理页面</button>
       </div>
       <div class="zaw-row">
         <label>间隔 <input type="number" min="100" step="100" data-field="intervalMs"></label>
@@ -1119,6 +1150,12 @@
       }
       #zhihu-activity-watcher-panel button:hover {
         background: #eef1f4;
+      }
+      #zhihu-activity-watcher-panel button.zaw-active {
+        border-color: #0969da;
+        background: #ddf4ff;
+        color: #0969da;
+        font-weight: 600;
       }
       #zhihu-activity-watcher-panel label {
         display: flex;
@@ -1185,10 +1222,14 @@
     panel.addEventListener("click", (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
+      const mode = target.dataset.mode;
+      if (mode) {
+        setCollectionMode(mode);
+        return;
+      }
       const action = target.dataset.action;
       if (action === "start") start();
       if (action === "stop") stop();
-      if (action === "api-collect") startApiCollect();
       if (action === "json") exportJson();
       if (action === "csv") exportCsv();
       if (action === "prompt-summary") exportPromptMarkdown(true);
@@ -1239,10 +1280,12 @@
     if (!panel) return;
     const status = panel.querySelector(".zaw-status");
     const intervalInput = panel.querySelector("[data-field='intervalMs']");
+    const mode = currentCollectionMode();
 
     if (status) {
       const parts = [
-        state.running ? "运行中" : "已暂停",
+        isCollecting() ? "运行中" : "已暂停",
+        mode === "api" ? "API直采" : "DOM滚动",
         `${state.items.length} 条`,
         state.apiRunning ? `API直采 ${state.apiPageCount}页` : `API ${state.apiAddedCount}`,
         `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
@@ -1254,6 +1297,11 @@
     if (intervalInput instanceof HTMLInputElement && document.activeElement !== intervalInput) {
       intervalInput.value = String(state.settings.intervalMs);
     }
+
+    panel.querySelectorAll("[data-mode]").forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      button.classList.toggle("zaw-active", button.dataset.mode === mode);
+    });
   }
 
   function boot() {
