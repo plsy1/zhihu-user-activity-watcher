@@ -51,6 +51,8 @@ Use the `AI+摘要` or `AI精简` button when you want to paste the export into 
 
 The AI Markdown omits links and raw JSON to reduce token usage. Use `AI精简` for large timelines, and `AI+摘要` when the model needs more content context. Use JSON/CSV exports when you need full `targetUrl` values or structured fields.
 
+AI Markdown uses Zhihu's original visible time text in the timeline and includes an overall time range in metadata. JSON/CSV exports still keep the parsed `timeIso` field for structured processing.
+
 ## Approach
 
 The script does not bypass login checks, CAPTCHA, rate limits, or access controls. It reads activity cards already rendered in the browser DOM and scrolls at a conservative interval.

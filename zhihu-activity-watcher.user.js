@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.4
+// @version      0.2.6
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -413,7 +413,7 @@
   function buildPromptMarkdown({ includeSummary }) {
     const payload = buildExportPayload();
     const timelineLines = state.items.map((item, index) => {
-      const time = item.timeIso || item.timeText || "时间未知";
+      const time = timelineTimeLabel(item);
       const target = item.targetTitle || "无标题";
       const summary = includeSummary && item.summary ? `\n  摘要: ${item.summary}` : "";
       return `${index + 1}. [${time}] ${item.actionLabel} ${target}${summary}`;
@@ -427,14 +427,33 @@
       "# 元数据",
       "",
       `- 用户 token: ${payload.profileToken}`,
-      `- 导出时间: ${payload.exportedAt}`,
+      `- 导出时间: ${formatLocalDateTime(new Date(payload.exportedAt))}`,
       `- 动态条数: ${payload.itemCount}`,
+      `- 时间范围: ${buildTimelineTimeRange(state.items)}`,
       "",
       "# Timeline",
       "",
       timelineLines.join("\n\n") || "无数据",
       "",
     ].join("\n");
+  }
+
+  function timelineTimeLabel(item) {
+    return item.timeText || item.timeIso || "时间未知";
+  }
+
+  function buildTimelineTimeRange(items) {
+    const knownItems = items.filter((item) => item.timeText || item.timeIso);
+    if (knownItems.length === 0) return "未知";
+    if (knownItems.length === 1) return timelineTimeLabel(knownItems[0]);
+
+    const first = timelineTimeLabel(knownItems[0]);
+    const last = timelineTimeLabel(knownItems[knownItems.length - 1]);
+    return `${last} 至 ${first}`;
+  }
+
+  function formatLocalDateTime(date) {
+    return date.toLocaleString("zh-CN", { hour12: false });
   }
 
   function csvCell(value) {
@@ -520,7 +539,7 @@
         <button data-action="activity-page">动态页</button>
       </div>
       <div class="zaw-row">
-        <label>间隔 <input type="number" min="1200" step="100" data-field="intervalMs"></label>
+        <label>间隔 <input type="number" min="100" step="100" data-field="intervalMs"></label>
       </div>
     `;
 
@@ -672,7 +691,7 @@
       const target = event.target;
       if (!(target instanceof HTMLInputElement)) return;
       if (target.dataset.field !== "intervalMs") return;
-      state.settings.intervalMs = Math.max(1200, Number(target.value) || 2800);
+      state.settings.intervalMs = Math.max(100, Number(target.value) || 2800);
       saveJson(SETTINGS_KEY, state.settings);
       updatePanel();
     });
