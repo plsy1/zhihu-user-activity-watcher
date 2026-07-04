@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.6
+// @version      0.2.7
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
 // @updateURL    https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
 // @downloadURL  https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
-// @grant        GM_download
+// @grant        none
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -464,14 +464,10 @@
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
 
-    if (typeof GM_download === "function") {
-      GM_download({ url, name: filename, saveAs: true, onload: () => URL.revokeObjectURL(url) });
-      return;
-    }
-
     const link = document.createElement("a");
     link.href = url;
     link.download = filename;
+    link.style.display = "none";
     document.body.appendChild(link);
     link.click();
     link.remove();
