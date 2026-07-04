@@ -32,11 +32,13 @@ Each captured item is normalized into a timeline row:
 
 Use the `AI` button when you want to paste the export into a large language model. The Markdown file includes a prompt asking the model to:
 
-- Summarize topic changes over time.
-- Group repeated interests and behavior patterns with evidence.
-- Identify dense activity periods.
-- Separate facts, weak signals, and unknowns.
-- Avoid sensitive personal inferences.
+- Build a cautious public-activity user profile.
+- Analyze interests, hobbies, preferred topics, and repeated content patterns.
+- Summarize behavior habits, such as liking, following, answering, or collecting.
+- Identify active dates, active hour ranges, and unusually dense activity windows.
+- Infer possible non-sensitive background categories, such as broad professional, learning, or interest areas, with confidence levels and evidence.
+- Separate facts, weak signals, and unsupported conclusions.
+- Avoid real identity discovery, contact lookup, precise location inference, or sensitive personal inferences.
 
 ## Approach
 
