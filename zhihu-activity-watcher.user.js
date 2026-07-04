@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.2
+// @version      0.2.3
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -403,7 +403,7 @@
       "6. 可能身份线索：只讨论非敏感、非唯一定位的身份类别或角色倾向，例如“可能关注量化投资的学习者/从业者/爱好者”；不要尝试识别真实姓名、单位、学校、住址、联系方式或账号背后的自然人。",
       "7. 主题变化时间线：按时间顺序概括该用户近期关注/点赞/回答/收藏的主题变化。",
       "8. 事实、弱信号、不可判断：分别列出明确事实、合理弱信号和当前数据不能支持的结论。",
-      "9. 后续核查建议：列出最值得人工核查的 timeline 序号、标题或问题类型，以及核查目的。若需要链接，请从原始 JSON 的 targetUrl 字段中查找。",
+      "9. 后续核查建议：列出最值得人工核查的 timeline 序号、标题或问题类型，以及核查目的。若需要链接或结构化字段，请另行使用 JSON/CSV 导出。",
       "",
       "隐私与合规要求：只分析数据中出现的公开可见动态；不要做真实身份定位、骚扰建议、联系方式查找、住址/精确位置推断；不要推断健康、宗教、政治派别、身份证明等高度敏感个人属性。对于可能职业、教育背景、收入层级等画像，只能作为低风险的类别级推测，并明确不确定性。",
     ].join("\n");
@@ -432,12 +432,6 @@
       "# Timeline",
       "",
       timelineLines.join("\n\n") || "无数据",
-      "",
-      "# 原始 JSON",
-      "",
-      "```json",
-      JSON.stringify(payload, null, 2),
-      "```",
       "",
     ].join("\n");
   }

@@ -21,7 +21,7 @@ The script includes `@updateURL` and `@downloadURL`, so future updates pushed to
    - `暂停`: stop scrolling.
    - `JSON`: export structured timeline data plus the analysis prompt.
    - `CSV`: export timeline rows for spreadsheets.
-   - `AI`: export a Markdown file that contains an analysis prompt, readable timeline, and raw JSON. It also opens an in-page preview for copying.
+   - `AI`: export a Markdown file that contains an analysis prompt and a compact readable timeline. It also opens an in-page preview for copying.
    - `清空`: clear records stored in browser localStorage.
 
 ## Exported fields
@@ -48,7 +48,7 @@ Use the `AI` button when you want to paste the export into a large language mode
 - Separate facts, weak signals, and unsupported conclusions.
 - Avoid real identity discovery, contact lookup, precise location inference, or sensitive personal inferences.
 
-The readable timeline in the AI Markdown omits links to reduce token usage. Full `targetUrl` values are still included in the raw JSON block and in JSON/CSV exports.
+The AI Markdown omits links and raw JSON to reduce token usage. Use JSON/CSV exports when you need full `targetUrl` values or structured fields.
 
 ## Approach
 
