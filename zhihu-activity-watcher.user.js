@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.8
+// @version      0.2.9
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
 // @updateURL    https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
 // @downloadURL  https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
@@ -34,6 +34,8 @@
     timer: null,
     idleRounds: 0,
     lastHeight: 0,
+    apiAddedCount: 0,
+    lastApiAt: "",
     items: loadItems(),
     settings: {
       intervalMs: 2800,
@@ -41,6 +43,8 @@
       ...loadJson(SETTINGS_KEY, {}),
     },
   };
+
+  installNetworkHooks();
 
   function loadJson(key, fallback) {
     try {
@@ -119,6 +123,26 @@
     if (item.targetUrl) return [item.actionType, item.targetUrl, item.timeText].join("|");
     if (item.url) return item.url;
     return [item.profileToken, item.actionType, item.targetTitle, item.timeText].join("|");
+  }
+
+  function addItems(items) {
+    const before = state.items.length;
+    const keys = new Set(state.items.map(itemKey));
+
+    for (const item of items) {
+      const key = itemKey(item);
+      if (!key || keys.has(key)) continue;
+      keys.add(key);
+      state.items.push(item);
+    }
+
+    if (state.items.length !== before) {
+      saveItems();
+    } else {
+      updatePanel();
+    }
+
+    return state.items.length - before;
   }
 
   function classifyAction(text) {
@@ -269,28 +293,205 @@
       summary: fullText.slice(0, 500),
       capturedAt: new Date().toISOString(),
       pageUrl: location.href,
+      source: "dom",
     };
   }
 
   function collectVisibleItems() {
-    const before = state.items.length;
-    const keys = new Set(state.items.map(itemKey));
+    return addItems(likelyActivityContainers().map(extractItem));
+  }
 
-    for (const container of likelyActivityContainers()) {
-      const item = extractItem(container);
-      const key = itemKey(item);
-      if (!key || keys.has(key)) continue;
-      keys.add(key);
-      state.items.push(item);
-    }
+  function installNetworkHooks() {
+    if (window.__zhihuActivityWatcherHooksInstalled) return;
+    window.__zhihuActivityWatcherHooksInstalled = true;
+    hookFetch();
+    hookXhr();
+  }
 
-    if (state.items.length !== before) {
-      saveItems();
-    } else {
+  function hookFetch() {
+    if (typeof window.fetch !== "function") return;
+    const originalFetch = window.fetch;
+    window.fetch = function (...args) {
+      const requestUrl = requestUrlOf(args[0]);
+      const result = originalFetch.apply(this, args);
+
+      if (isActivityApiUrl(requestUrl)) {
+        result
+          .then((response) => {
+            if (!response || typeof response.clone !== "function") return;
+            response
+              .clone()
+              .json()
+              .then((json) => ingestActivityApiResponse(json, requestUrl))
+              .catch(() => {});
+          })
+          .catch(() => {});
+      }
+
+      return result;
+    };
+  }
+
+  function hookXhr() {
+    if (typeof window.XMLHttpRequest !== "function") return;
+    const originalOpen = window.XMLHttpRequest.prototype.open;
+    const originalSend = window.XMLHttpRequest.prototype.send;
+
+    window.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__zawUrl = requestUrlOf(url);
+      return originalOpen.call(this, method, url, ...rest);
+    };
+
+    window.XMLHttpRequest.prototype.send = function (...args) {
+      if (isActivityApiUrl(this.__zawUrl)) {
+        this.addEventListener("loadend", () => {
+          try {
+            const json = this.responseType === "json" ? this.response : JSON.parse(this.responseText || "");
+            ingestActivityApiResponse(json, this.__zawUrl);
+          } catch {}
+        });
+      }
+      return originalSend.apply(this, args);
+    };
+  }
+
+  function requestUrlOf(input) {
+    if (!input) return "";
+    if (typeof input === "string") return input;
+    if (input instanceof URL) return input.href;
+    if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+    return String(input);
+  }
+
+  function isActivityApiUrl(url) {
+    return /\/api\/v3\/moments\/[^/?#]+\/activities\b/.test(url) || /\/api\/v4\/members\/[^/?#]+\/activities\b/.test(url);
+  }
+
+  function ingestActivityApiResponse(json, sourceUrl) {
+    const items = extractApiItems(json, sourceUrl);
+    if (items.length === 0) return;
+
+    const added = addItems(items);
+    if (added > 0) {
+      state.apiAddedCount += added;
+      state.lastApiAt = formatLocalDateTime(new Date());
       updatePanel();
     }
+  }
 
-    return state.items.length - before;
+  function extractApiItems(json, sourceUrl) {
+    const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    return rows.map((row) => apiRowToItem(row, sourceUrl)).filter(Boolean);
+  }
+
+  function apiRowToItem(row, sourceUrl) {
+    if (!row || typeof row !== "object") return null;
+
+    const target = row.target || row.content || row.sourceContent || row.source_content || row.object || {};
+    const nestedTarget = target.target || target.content || {};
+    const actionText = pickText(row, ["action_text", "actionText", "verb", "verb_text", "verbText", "type"]);
+    const title =
+      pickText(target, ["title", "name", "question_title", "excerpt_title"]) ||
+      pickText(nestedTarget, ["title", "name", "question_title", "excerpt_title"]) ||
+      pickText(row, ["title", "question_title"]);
+    const summary =
+      pickText(target, ["excerpt", "summary", "content", "description"]) ||
+      pickText(nestedTarget, ["excerpt", "summary", "content", "description"]) ||
+      pickText(row, ["excerpt", "summary", "content", "description"]);
+    const timeText = apiTimeText(row);
+    const rawUrl =
+      pickText(target, ["url", "link", "content_url"]) ||
+      pickText(nestedTarget, ["url", "link", "content_url"]) ||
+      apiUrlFromIds(target) ||
+      apiUrlFromIds(nestedTarget);
+    const targetUrl = absoluteUrl(rawUrl);
+    const action = classifyAction(`${actionText} ${summary} ${title}`);
+    const normalizedTitle = cleanTargetTitle(title, `${actionText} ${timeText} ${title} ${summary}`, timeText);
+
+    if (!normalizedTitle && !targetUrl && !summary) return null;
+
+    return {
+      profileToken: profileTokenFromApiUrl(sourceUrl) || currentProfileToken(),
+      actionType: action.type,
+      actionLabel: action.label,
+      targetType: targetTypeFromApiTarget(target, targetUrl),
+      targetTitle: normalizedTitle || summary.slice(0, 80),
+      targetUrl,
+      timeText,
+      timeIso: parseZhihuTime(timeText) || apiTimeIso(row),
+      summary: normalizeText(`${actionText} ${timeText} ${normalizedTitle || title} ${summary}`).slice(0, 500),
+      capturedAt: new Date().toISOString(),
+      pageUrl: location.href,
+      source: "api",
+    };
+  }
+
+  function pickText(object, keys) {
+    for (const key of keys) {
+      const value = object?.[key];
+      if (typeof value === "string" && normalizeText(value)) return normalizeText(stripHtml(value));
+      if (typeof value === "number") return String(value);
+    }
+    return "";
+  }
+
+  function stripHtml(value) {
+    return String(value).replace(/<[^>]*>/g, " ");
+  }
+
+  function apiTimeText(row) {
+    const value =
+      row.created_time ||
+      row.createdTime ||
+      row.created_at ||
+      row.createdAt ||
+      row.updated_time ||
+      row.timestamp ||
+      row.time;
+    if (!value) return "";
+    if (typeof value === "number") {
+      const milliseconds = value > 1e12 ? value : value * 1000;
+      return formatLocalDateTime(new Date(milliseconds));
+    }
+    return normalizeText(value);
+  }
+
+  function apiTimeIso(row) {
+    const value =
+      row.created_time ||
+      row.createdTime ||
+      row.created_at ||
+      row.createdAt ||
+      row.updated_time ||
+      row.timestamp ||
+      row.time;
+    if (typeof value !== "number") return "";
+    const milliseconds = value > 1e12 ? value : value * 1000;
+    return new Date(milliseconds).toISOString();
+  }
+
+  function apiUrlFromIds(target) {
+    const type = target?.type || target?.schema;
+    const id = target?.id || target?.token || target?.url_token || target?.urlToken;
+    if (!type || !id) return "";
+    if (type === "answer") {
+      const questionId = target?.question?.id || target?.question_id || target?.questionId;
+      return questionId ? `/question/${questionId}/answer/${id}` : `/answer/${id}`;
+    }
+    if (type === "question") return `/question/${id}`;
+    if (type === "article") return `https://zhuanlan.zhihu.com/p/${id}`;
+    if (type === "pin") return `/pin/${id}`;
+    if (type === "people" || type === "member") return `/people/${id}`;
+    return "";
+  }
+
+  function targetTypeFromApiTarget(target, url) {
+    return target?.type || target?.schema || targetTypeFromUrl(url);
+  }
+
+  function profileTokenFromApiUrl(url) {
+    const match = String(url).match(/\/api\/v[34]\/(?:moments|members)\/([^/?#]+)\/activities\b/);
+    return match ? decodeURIComponent(match[1]) : "";
   }
 
   function tick() {
@@ -340,7 +541,24 @@
   function clearItems() {
     if (!confirm("Clear captured activity items for this browser?")) return;
     state.items = [];
+    state.apiAddedCount = 0;
+    state.lastApiAt = "";
     saveItems();
+  }
+
+  function trimOldCards(maxCards = 60) {
+    const cards = Array.from(document.querySelectorAll(".List-item"));
+    const extra = cards.length - maxCards;
+    if (extra <= 0) {
+      updatePanel(`页面卡片 ${cards.length} 条，无需清理`);
+      return;
+    }
+
+    for (const card of cards.slice(0, extra)) {
+      card.remove();
+    }
+
+    updatePanel(`已清理 ${extra} 个旧卡片`);
   }
 
   function exportJson() {
@@ -364,6 +582,7 @@
       "timeText",
       "timeIso",
       "capturedAt",
+      "source",
       "summary",
     ];
     const rows = [headers, ...state.items.map((item) => headers.map((key) => item[key] || ""))];
@@ -382,7 +601,7 @@
 
   function buildExportPayload() {
     return {
-      source: "zhihu_user_activity_page_dom",
+      source: "zhihu_user_activity_page",
       profileToken: currentProfileToken(),
       exportedAt: new Date().toISOString(),
       itemCount: state.items.length,
@@ -732,6 +951,9 @@
         <button data-action="activity-page">动态页</button>
       </div>
       <div class="zaw-row">
+        <button data-action="trim-page">清理页面</button>
+      </div>
+      <div class="zaw-row">
         <label>间隔 <input type="number" min="100" step="100" data-field="intervalMs"></label>
       </div>
     `;
@@ -854,6 +1076,7 @@
       if (action === "prompt-compact") exportPromptMarkdown(false);
       if (action === "clear") clearItems();
       if (action === "activity-page") ensureActivityPage();
+      if (action === "trim-page") trimOldCards();
     });
 
     document.addEventListener("click", async (event) => {
@@ -892,14 +1115,21 @@
     updatePanel();
   }
 
-  function updatePanel() {
+  function updatePanel(message) {
     const panel = document.querySelector("#zhihu-activity-watcher-panel");
     if (!panel) return;
     const status = panel.querySelector(".zaw-status");
     const intervalInput = panel.querySelector("[data-field='intervalMs']");
 
     if (status) {
-      status.textContent = `${state.running ? "运行中" : "已暂停"} · ${state.items.length} 条 · 空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`;
+      const parts = [
+        state.running ? "运行中" : "已暂停",
+        `${state.items.length} 条`,
+        `API ${state.apiAddedCount}`,
+        `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
+      ];
+      if (message) parts.push(message);
+      status.textContent = parts.join(" · ");
     }
 
     if (intervalInput instanceof HTMLInputElement && document.activeElement !== intervalInput) {
