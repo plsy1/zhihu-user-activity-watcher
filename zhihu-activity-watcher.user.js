@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.3.2
+// @version      0.3.3
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -1059,6 +1059,50 @@
     return `${last} 至 ${first}`;
   }
 
+  function buildPanelTimeRange(items) {
+    const knownItems = items
+      .map((item) => ({
+        text: timelineTimeLabel(item),
+        value: timelineTimeValue(item),
+      }))
+      .filter((item) => item.value || item.text !== "时间未知");
+
+    if (knownItems.length === 0) return "";
+
+    const sorted = knownItems.slice().sort((a, b) => {
+      if (a.value && b.value) return b.value - a.value;
+      if (a.value) return -1;
+      if (b.value) return 1;
+      return 0;
+    });
+    const newest = sorted[0];
+    const oldest = sorted[sorted.length - 1];
+    const newestText = compactTimeLabel(newest);
+    const oldestText = compactTimeLabel(oldest);
+    return newestText === oldestText ? `时间 ${oldestText}` : `时间 ${newestText} 至 ${oldestText}`;
+  }
+
+  function timelineTimeValue(item) {
+    const parsed = Date.parse(item.timeIso || "");
+    if (Number.isFinite(parsed)) return parsed;
+    const fallback = Date.parse(item.timeText || "");
+    return Number.isFinite(fallback) ? fallback : 0;
+  }
+
+  function compactTimeLabel(item) {
+    if (item.value) {
+      return new Date(item.value).toLocaleString("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+    return item.text;
+  }
+
   function formatLocalDateTime(date) {
     return date.toLocaleString("zh-CN", { hour12: false });
   }
@@ -1178,6 +1222,7 @@
         min-height: 36px;
         margin-bottom: 8px;
         color: #57606a;
+        word-break: break-word;
       }
       #zhihu-activity-watcher-panel .zaw-row {
         display: flex;
@@ -1334,6 +1379,7 @@
         isCollecting() ? "运行中" : "已暂停",
         mode === "api" ? "API直采" : "DOM滚动",
         `${state.items.length} 条`,
+        buildPanelTimeRange(state.items),
         state.apiRunning ? `API直采 ${state.apiPageCount}页` : `API ${state.apiAddedCount}`,
         mode === "api" ? (savedCursor ? "续采点已存" : "无续采点") : "",
         `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
