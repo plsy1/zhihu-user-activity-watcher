@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
-// @namespace    https://local/zhihu-user-activity-watcher
-// @version      0.2.0
+// @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
+// @version      0.2.1
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
+// @updateURL    https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
+// @downloadURL  https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js
 // @grant        GM_download
 // @run-at       document-idle
 // ==/UserScript==

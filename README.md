@@ -2,10 +2,18 @@
 
 Tampermonkey userscript for exporting a visible activity timeline from a Zhihu user's profile activity page.
 
+## Install
+
+[![Install userscript](https://img.shields.io/badge/Install-userscript-2ea44f?style=for-the-badge)](https://raw.githubusercontent.com/plsy1/zhihu-user-activity-watcher/main/zhihu-activity-watcher.user.js)
+
+Install Tampermonkey first, then click the button above. Tampermonkey should open the userscript installation screen automatically.
+
+The script includes `@updateURL` and `@downloadURL`, so future updates pushed to the `main` branch can be picked up by Tampermonkey's normal update check.
+
 ## Use
 
 1. Install Tampermonkey in your browser.
-2. Open `zhihu-activity-watcher.user.js` and install it as a userscript.
+2. Click the install button above.
 3. Visit a Zhihu profile, for example `https://www.zhihu.com/people/<token>/activities`.
 4. Use the floating panel:
    - `动态页`: jump from the profile page to the activity page.
