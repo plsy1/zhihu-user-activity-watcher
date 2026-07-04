@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.3.3
+// @version      0.3.4
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -44,12 +44,7 @@
     apiLastError: "",
     lastApiAt: "",
     items: loadItems(),
-    settings: {
-      collectionMode: "api",
-      intervalMs: 2800,
-      maxIdleRounds: 8,
-      ...loadJson(SETTINGS_KEY, {}),
-    },
+    settings: loadSettings(),
   };
 
   installNetworkHooks();
@@ -65,6 +60,37 @@
 
   function saveJson(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function loadSettings() {
+    const saved = loadJson(SETTINGS_KEY, {});
+    const legacyInterval = normalizeIntervalMs(saved.intervalMs, 2800);
+    const intervalMinMs = normalizeIntervalMs(saved.intervalMinMs, legacyInterval);
+    const intervalMaxMs = Math.max(intervalMinMs, normalizeIntervalMs(saved.intervalMaxMs, legacyInterval));
+    return {
+      collectionMode: saved.collectionMode === "dom" ? "dom" : "api",
+      intervalMinMs,
+      intervalMaxMs,
+      maxIdleRounds: Math.max(1, Number(saved.maxIdleRounds) || 8),
+    };
+  }
+
+  function normalizeIntervalMs(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(100, Math.round(number)) : fallback;
+  }
+
+  function randomIntervalMs() {
+    const min = normalizeIntervalMs(state.settings.intervalMinMs, 2800);
+    const max = Math.max(min, normalizeIntervalMs(state.settings.intervalMaxMs, min));
+    if (min === max) return min;
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function intervalRangeLabel() {
+    const min = normalizeIntervalMs(state.settings.intervalMinMs, 2800);
+    const max = Math.max(min, normalizeIntervalMs(state.settings.intervalMaxMs, min));
+    return min === max ? `间隔 ${min}ms` : `间隔 ${min}-${max}ms`;
   }
 
   function loadApiCursor(token) {
@@ -568,7 +594,7 @@
     }
 
     window.scrollBy({ top: Math.floor(window.innerHeight * 0.82), behavior: "smooth" });
-    state.timer = window.setTimeout(tick, state.settings.intervalMs);
+    state.timer = window.setTimeout(tick, randomIntervalMs());
   }
 
   function start() {
@@ -657,7 +683,7 @@
 
         nextUrl = followingUrl;
         saveApiCursor(token, followingUrl);
-        await sleep(state.settings.intervalMs);
+        await sleep(randomIntervalMs());
       }
     } catch (error) {
       state.apiLastError = error instanceof Error ? error.message : String(error);
@@ -1193,7 +1219,7 @@
         <button data-action="trim-page">清理页面</button>
       </div>
       <div class="zaw-row">
-        <label>间隔 <input type="number" min="100" step="100" data-field="intervalMs"></label>
+        <label>间隔 <input type="number" min="100" step="100" data-field="intervalMinMs"> - <input type="number" min="100" step="100" data-field="intervalMaxMs"> ms</label>
       </div>
     `;
 
@@ -1255,7 +1281,8 @@
         width: 100%;
       }
       #zhihu-activity-watcher-panel input {
-        width: 88px;
+        box-sizing: border-box;
+        width: 58px;
         border: 1px solid #d0d7de;
         border-radius: 6px;
         padding: 4px 6px;
@@ -1357,8 +1384,13 @@
     panel.addEventListener("change", (event) => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement)) return;
-      if (target.dataset.field !== "intervalMs") return;
-      state.settings.intervalMs = Math.max(100, Number(target.value) || 2800);
+      const field = target.dataset.field;
+      if (field !== "intervalMinMs" && field !== "intervalMaxMs") return;
+      state.settings[field] = normalizeIntervalMs(target.value, state.settings[field]);
+      if (state.settings.intervalMaxMs < state.settings.intervalMinMs) {
+        if (field === "intervalMinMs") state.settings.intervalMaxMs = state.settings.intervalMinMs;
+        if (field === "intervalMaxMs") state.settings.intervalMinMs = state.settings.intervalMaxMs;
+      }
       saveJson(SETTINGS_KEY, state.settings);
       updatePanel();
     });
@@ -1370,7 +1402,6 @@
     const panel = document.querySelector("#zhihu-activity-watcher-panel");
     if (!panel) return;
     const status = panel.querySelector(".zaw-status");
-    const intervalInput = panel.querySelector("[data-field='intervalMs']");
     const mode = currentCollectionMode();
 
     if (status) {
@@ -1380,6 +1411,7 @@
         mode === "api" ? "API直采" : "DOM滚动",
         `${state.items.length} 条`,
         buildPanelTimeRange(state.items),
+        intervalRangeLabel(),
         state.apiRunning ? `API直采 ${state.apiPageCount}页` : `API ${state.apiAddedCount}`,
         mode === "api" ? (savedCursor ? "续采点已存" : "无续采点") : "",
         `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
@@ -1388,9 +1420,10 @@
       status.textContent = parts.join(" · ");
     }
 
-    if (intervalInput instanceof HTMLInputElement && document.activeElement !== intervalInput) {
-      intervalInput.value = String(state.settings.intervalMs);
-    }
+    panel.querySelectorAll("[data-field='intervalMinMs'], [data-field='intervalMaxMs']").forEach((input) => {
+      if (!(input instanceof HTMLInputElement) || document.activeElement === input) return;
+      input.value = String(state.settings[input.dataset.field]);
+    });
 
     panel.querySelectorAll("[data-mode]").forEach((button) => {
       if (!(button instanceof HTMLElement)) return;
