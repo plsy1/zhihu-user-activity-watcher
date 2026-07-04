@@ -21,7 +21,8 @@ The script includes `@updateURL` and `@downloadURL`, so future updates pushed to
    - `暂停`: stop scrolling.
    - `JSON`: export structured timeline data plus the analysis prompt.
    - `CSV`: export timeline rows for spreadsheets.
-   - `AI`: export a Markdown file that contains an analysis prompt and a compact readable timeline. It also opens an in-page preview for copying.
+   - `AI+摘要`: export a Markdown file that contains the analysis prompt, compact timeline, and visible card summaries. It also opens an in-page preview for copying.
+   - `AI精简`: export a Markdown file that contains the analysis prompt and compact timeline without summaries.
    - `清空`: clear records stored in browser localStorage.
 
 ## Exported fields
@@ -38,7 +39,7 @@ Each captured item is normalized into a timeline row:
 
 ## AI workflow
 
-Use the `AI` button when you want to paste the export into a large language model. The Markdown file includes a prompt asking the model to:
+Use the `AI+摘要` or `AI精简` button when you want to paste the export into a large language model. The Markdown file includes a prompt asking the model to:
 
 - Build a cautious public-activity user profile.
 - Analyze interests, hobbies, preferred topics, and repeated content patterns.
@@ -48,7 +49,7 @@ Use the `AI` button when you want to paste the export into a large language mode
 - Separate facts, weak signals, and unsupported conclusions.
 - Avoid real identity discovery, contact lookup, precise location inference, or sensitive personal inferences.
 
-The AI Markdown omits links and raw JSON to reduce token usage. Use JSON/CSV exports when you need full `targetUrl` values or structured fields.
+The AI Markdown omits links and raw JSON to reduce token usage. Use `AI精简` for large timelines, and `AI+摘要` when the model needs more content context. Use JSON/CSV exports when you need full `targetUrl` values or structured fields.
 
 ## Approach
 

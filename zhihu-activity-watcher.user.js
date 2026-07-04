@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.2.3
+// @version      0.2.4
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -371,10 +371,11 @@
     download(`zhihu-timeline-${currentProfileToken() || "profile"}.csv`, csv, "text/csv;charset=utf-8");
   }
 
-  function exportPromptMarkdown() {
+  function exportPromptMarkdown(includeSummary) {
     collectVisibleItems();
-    const filename = `zhihu-timeline-for-ai-${currentProfileToken() || "profile"}.md`;
-    const content = buildPromptMarkdown();
+    const suffix = includeSummary ? "with-summary" : "compact";
+    const filename = `zhihu-timeline-for-ai-${suffix}-${currentProfileToken() || "profile"}.md`;
+    const content = buildPromptMarkdown({ includeSummary });
     download(filename, content, "text/markdown;charset=utf-8");
     showExportPreview(filename, content);
   }
@@ -409,12 +410,12 @@
     ].join("\n");
   }
 
-  function buildPromptMarkdown() {
+  function buildPromptMarkdown({ includeSummary }) {
     const payload = buildExportPayload();
     const timelineLines = state.items.map((item, index) => {
       const time = item.timeIso || item.timeText || "时间未知";
       const target = item.targetTitle || "无标题";
-      const summary = item.summary ? `\n  摘要: ${item.summary}` : "";
+      const summary = includeSummary && item.summary ? `\n  摘要: ${item.summary}` : "";
       return `${index + 1}. [${time}] ${item.actionLabel} ${target}${summary}`;
     });
 
@@ -509,7 +510,10 @@
       <div class="zaw-row">
         <button data-action="json">JSON</button>
         <button data-action="csv">CSV</button>
-        <button data-action="prompt">AI</button>
+      </div>
+      <div class="zaw-row">
+        <button data-action="prompt-summary">AI+摘要</button>
+        <button data-action="prompt-compact">AI精简</button>
       </div>
       <div class="zaw-row">
         <button data-action="clear">清空</button>
@@ -634,7 +638,8 @@
       if (action === "stop") stop();
       if (action === "json") exportJson();
       if (action === "csv") exportCsv();
-      if (action === "prompt") exportPromptMarkdown();
+      if (action === "prompt-summary") exportPromptMarkdown(true);
+      if (action === "prompt-compact") exportPromptMarkdown(false);
       if (action === "clear") clearItems();
       if (action === "activity-page") ensureActivityPage();
     });
