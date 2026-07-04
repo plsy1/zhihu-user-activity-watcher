@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zhihu User Activity Watcher
 // @namespace    https://github.com/plsy1/zhihu-user-activity-watcher
-// @version      0.3.1
+// @version      0.3.2
 // @description  Export a visible Zhihu activity timeline with an LLM analysis prompt.
 // @author       local
 // @match        https://www.zhihu.com/people/*
@@ -16,6 +16,7 @@
 
   const STORE_KEY = "zhihu-activity-watcher.items";
   const SETTINGS_KEY = "zhihu-activity-watcher.settings";
+  const API_CURSOR_KEY = "zhihu-activity-watcher.api-cursors";
   const ACTIONS = [
     { re: /赞同|赞了|点赞/, type: "voteup", label: "点赞/赞同" },
     { re: /关注了问题/, type: "follow_question", label: "关注问题" },
@@ -37,7 +38,9 @@
     apiRunning: false,
     apiAddedCount: 0,
     apiPageCount: 0,
-    apiNextUrl: "",
+    apiCursorToken: currentProfileToken(),
+    apiNextUrl: loadApiCursor(currentProfileToken())?.nextUrl || "",
+    apiCursorSavedAt: loadApiCursor(currentProfileToken())?.savedAt || "",
     apiLastError: "",
     lastApiAt: "",
     items: loadItems(),
@@ -62,6 +65,38 @@
 
   function saveJson(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function loadApiCursor(token) {
+    const cursors = loadJson(API_CURSOR_KEY, {});
+    const cursor = token ? cursors[token] : null;
+    return cursor && typeof cursor.nextUrl === "string" ? cursor : null;
+  }
+
+  function saveApiCursor(token, nextUrl) {
+    if (!token || !nextUrl) return;
+    const cursors = loadJson(API_CURSOR_KEY, {});
+    const savedAt = new Date().toISOString();
+    cursors[token] = {
+      nextUrl,
+      savedAt,
+      pageUrl: location.href,
+    };
+    saveJson(API_CURSOR_KEY, cursors);
+    state.apiCursorToken = token;
+    state.apiNextUrl = nextUrl;
+    state.apiCursorSavedAt = savedAt;
+  }
+
+  function clearApiCursor(token) {
+    if (!token) return;
+    const cursors = loadJson(API_CURSOR_KEY, {});
+    delete cursors[token];
+    saveJson(API_CURSOR_KEY, cursors);
+    if (state.apiCursorToken === token) {
+      state.apiNextUrl = "";
+      state.apiCursorSavedAt = "";
+    }
   }
 
   function loadItems() {
@@ -373,7 +408,7 @@
   }
 
   function ingestActivityApiResponse(json, sourceUrl) {
-    captureActivityApiPaging(json);
+    captureActivityApiPaging(json, sourceUrl);
     const items = extractApiItems(json, sourceUrl);
     if (items.length === 0) return;
 
@@ -385,9 +420,10 @@
     }
   }
 
-  function captureActivityApiPaging(json) {
+  function captureActivityApiPaging(json, sourceUrl) {
     const next = nextActivityApiUrl(json);
-    if (next) state.apiNextUrl = next;
+    const token = profileTokenFromApiUrl(sourceUrl) || currentProfileToken();
+    if (next) saveApiCursor(token, next);
   }
 
   function nextActivityApiUrl(json) {
@@ -596,6 +632,11 @@
     state.apiPageCount = 0;
     updatePanel("API直采中");
 
+    const savedCursor = loadApiCursor(token);
+    state.apiCursorToken = token;
+    state.apiNextUrl = savedCursor?.nextUrl || "";
+    state.apiCursorSavedAt = savedCursor?.savedAt || "";
+
     let nextUrl = state.apiNextUrl || buildInitialActivityApiUrl(token);
 
     try {
@@ -609,10 +650,13 @@
         const isEnd = Boolean(json?.paging?.is_end || json?.paging?.isEnd) || rows.length === 0 || !followingUrl;
 
         updatePanel(`API页 ${state.apiPageCount}`);
-        if (isEnd) break;
+        if (isEnd) {
+          clearApiCursor(token);
+          break;
+        }
 
         nextUrl = followingUrl;
-        state.apiNextUrl = followingUrl;
+        saveApiCursor(token, followingUrl);
         await sleep(state.settings.intervalMs);
       }
     } catch (error) {
@@ -684,9 +728,11 @@
   }
 
   function clearItems() {
-    if (!confirm("Clear captured activity items for this browser?")) return;
+    if (!confirm("Clear captured activity items and API resume position for this browser?")) return;
     state.items = [];
     state.apiAddedCount = 0;
+    state.apiPageCount = 0;
+    clearApiCursor(currentProfileToken());
     state.lastApiAt = "";
     saveItems();
   }
@@ -1283,13 +1329,15 @@
     const mode = currentCollectionMode();
 
     if (status) {
+      const savedCursor = mode === "api" ? loadApiCursor(currentProfileToken()) : null;
       const parts = [
         isCollecting() ? "运行中" : "已暂停",
         mode === "api" ? "API直采" : "DOM滚动",
         `${state.items.length} 条`,
         state.apiRunning ? `API直采 ${state.apiPageCount}页` : `API ${state.apiAddedCount}`,
+        mode === "api" ? (savedCursor ? "续采点已存" : "无续采点") : "",
         `空闲 ${state.idleRounds}/${state.settings.maxIdleRounds}`,
-      ];
+      ].filter(Boolean);
       if (message) parts.push(message);
       status.textContent = parts.join(" · ");
     }
