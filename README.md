@@ -48,6 +48,8 @@ Use the `AI` button when you want to paste the export into a large language mode
 - Separate facts, weak signals, and unsupported conclusions.
 - Avoid real identity discovery, contact lookup, precise location inference, or sensitive personal inferences.
 
+The readable timeline in the AI Markdown omits links to reduce token usage. Full `targetUrl` values are still included in the raw JSON block and in JSON/CSV exports.
+
 ## Approach
 
 The script does not bypass login checks, CAPTCHA, rate limits, or access controls. It reads activity cards already rendered in the browser DOM and scrolls at a conservative interval.
